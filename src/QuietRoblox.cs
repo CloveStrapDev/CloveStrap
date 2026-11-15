@@ -111,10 +111,72 @@ namespace CloveStrap
             return result;
         }
 
+        // ---- self-healing
+        // Windows remembers each app's mixer volume by its exe path. If a Roblox window is closed (or CloveStrap is
+        // killed) while it's quietened, the 0% gets saved and every later game from that Roblox copy starts silent,
+        // even in front. So a game that starts near 0% or muted, without us quietening it, is put back to 100%.
+        const float StuckBelow = 0.05f;
+        static readonly HashSet<uint> healChecked = new HashSet<uint>();
+        static readonly object HealLock = new object();
+
+        static bool HealSession(uint pid, ISimpleAudioVolume vol)
+        {
+            float level; bool muted;
+            vol.GetMasterVolume(out level); vol.GetMute(out muted);
+            if (level >= StuckBelow && !muted) return false;
+            vol.SetMute(false, ref ctx);
+            vol.SetMasterVolume(1f, ref ctx);
+            Log.Write("Roblox pid " + pid + " started at " + (int)Math.Round(level * 100) + "% volume" + (muted ? " and muted" : "") +
+                      " (left over from an earlier session), set it back to 100%");
+            return true;
+        }
+
+        /// <summary>Checks Roblox games we haven't looked at yet. Returns how many were put back to full volume.</summary>
+        public static int HealNew()
+        {
+            lock (HealLock)
+            {
+                var pids = new HashSet<uint>(Process.GetProcessesByName("RobloxPlayerBeta").Select(p => (uint)p.Id));
+                healChecked.IntersectWith(pids);
+                pids.ExceptWith(healChecked);
+                if (pids.Count == 0) return 0;
+                int n = 0;
+                foreach (var kv in RobloxSessions(pids))
+                {
+                    healChecked.Add(kv.Key);
+                    if (quieted.ContainsKey(kv.Key)) continue;   // that one is quiet on purpose
+                    if (HealSession(kv.Key, kv.Value)) n++;
+                }
+                return n;
+            }
+        }
+
+        /// <summary>For the launcher: waits (in the background) for this game's sound to start, then heals it if needed.</summary>
+        public static void HealWhenReady(Process p)
+        {
+            new Thread(() =>
+            {
+                for (int i = 0; i < 60; i++)
+                {
+                    Thread.Sleep(1000);
+                    try
+                    {
+                        if (p.HasExited) return;
+                        var one = RobloxSessions(new HashSet<uint> { (uint)p.Id });
+                        ISimpleAudioVolume vol;
+                        if (one.TryGetValue((uint)p.Id, out vol)) { lock (HealLock) { healChecked.Add((uint)p.Id); HealSession((uint)p.Id, vol); } return; }
+                    }
+                    catch (Exception ex) { Log.Write("Volume check: " + ex.Message); return; }
+                }
+            }) { IsBackground = true, Name = "volume-heal" }.Start();
+        }
+
         public static void Run(Func<bool> stop)
         {
+            int n = 0;
             while (!stop())
             {
+                try { if (n++ % 7 == 0) HealNew(); } catch (Exception ex) { Log.Write("Volume check: " + ex.Message); }   // about every 2 s
                 try { Tick(); } catch (Exception ex) { Log.Write("Quieten Roblox: " + ex.Message); Thread.Sleep(2000); }
                 for (int i = 0; i < 3 && !stop(); i++) Thread.Sleep(100);
             }
@@ -128,6 +190,7 @@ namespace CloveStrap
             foreach (var gone in quieted.Keys.Where(k => !pids.Contains(k)).ToList()) quieted.Remove(gone);
             if (pids.Count == 0) return;
             if (!s.QuietRoblox) { if (quieted.Count > 0) RestoreAll(); return; }
+            lock (HealLock) if (pids.Any(p => !healChecked.Contains(p))) HealNew();   // never quieten a game before checking it
 
             uint fg; GetWindowThreadProcessId(GetForegroundWindow(), out fg);
             bool mute = (s.QuietMode ?? "mute") != "lower";
@@ -142,6 +205,7 @@ namespace CloveStrap
                     q = new Quieted();
                     vol.GetMasterVolume(out q.Original);
                     vol.GetMute(out q.WasMuted);
+                    if (q.Original < StuckBelow) { q.Original = 1f; q.WasMuted = false; }   // never "restore" to silence
                     q.Current = q.Original;
                     quieted[kv.Key] = q;
                     Fade(vol, q, mute ? 0f : q.Original * LowerTo);

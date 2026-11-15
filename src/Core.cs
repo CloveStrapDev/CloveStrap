@@ -1418,6 +1418,7 @@ namespace CloveStrap
             var p = Process.Start(psi);
             result.Process = p;
             Log.Write("Started RobloxPlayerBeta pid " + p.Id + " from " + dir);
+            try { QuietRoblox.HealWhenReady(p); } catch (Exception ex) { Log.Write("Volume check skipped: " + ex.Message); }
 
             try
             {
