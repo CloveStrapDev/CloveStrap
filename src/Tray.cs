@@ -125,6 +125,7 @@ namespace CloveStrap
             Updater.Downloaded += v => { try { marshal.BeginInvoke((Action)(() => UpdateReady(v))); } catch { } };
             new Thread(() => Updater.Run(() => exiting)) { IsBackground = true, Name = "updater" }.Start();
 
+            if (Program.JustUpdated) icon.ShowBalloonTip(6000, "Updated to CloveStrap " + Updater.CurrentText, "You're on the newest version.", ToolTipIcon.Info);
             if (!startHidden) ShowWindow();
         }
 

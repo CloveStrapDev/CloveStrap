@@ -1901,7 +1901,7 @@ namespace CloveStrap
             saveTimer.Tick += (o, e) => { saveTimer.Stop(); SaveNow(true); };
             flashTimer.Tick += (o, e) => { flashTimer.Stop(); if (pill != null) pill.Set(IdleStatus, Theme.Accent); };
             FormClosing += (o, e) => { if (saveTimer.Enabled) { saveTimer.Stop(); SaveNow(false); } };
-            Shown += (o, e) => { RefreshStatus(); FindRobloxName(); if (Program.DemoFlash != null) { pill.Set(Program.DemoFlash, Theme.Warn); flashTimer.Stop(); } if (Program.DemoSearch != null) { searchBox.Box.Text = Program.DemoSearch; if (Program.DemoGoTo == "1") searchPopup.PickSelected(); } if (Program.DemoAsk != null) { ToggleChat(true); demoQueue = new Queue<string>(Program.DemoAsk.Split((char)124)); Ask(demoQueue.Dequeue()); } };
+            Shown += (o, e) => { RefreshStatus(); FindRobloxName(); if (Program.JustUpdated) { Program.JustUpdated = false; Flash("Updated to v" + Updater.CurrentText + "! " + Cute.Face(), Theme.Accent); } if (Program.DemoFlash != null) { pill.Set(Program.DemoFlash, Theme.Warn); flashTimer.Stop(); } if (Program.DemoSearch != null) { searchBox.Box.Text = Program.DemoSearch; if (Program.DemoGoTo == "1") searchPopup.PickSelected(); } if (Program.DemoAsk != null) { ToggleChat(true); demoQueue = new Queue<string>(Program.DemoAsk.Split((char)124)); Ask(demoQueue.Dequeue()); } };
             Build(startPage ?? "Presets");
         }
 
@@ -3561,6 +3561,7 @@ namespace CloveStrap
         public static bool DemoThemes;   // screenshots only
         public static string DemoFlash;  // screenshots only
         public static string DemoSearch, DemoGoTo, DemoAsk;  // screenshots only
+        public static bool JustUpdated;   // this run was started by the updater
 
         /// <summary>Play on roblox.com is on by default: take it (back) whenever CloveStrap opens, e.g. after a Roblox update reclaimed it.</summary>
         static void ClaimPlayButton()
@@ -3906,6 +3907,7 @@ namespace CloveStrap
 
             // ---- settings window
             if (Updater.HandOff(args)) return 0;   // install a waiting update, or open a newer installed CloveStrap
+            JustUpdated = args.Contains("--after-update");
             BrowserLogin.CleanupStale();
             Paths.RemoveOldFolder();
             ClaimPlayButton();
