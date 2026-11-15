@@ -1,0 +1,5 @@
+# keep shell scripts and workflows with Unix line endings so bash runs them on any machine
+*.sh text eol=lf
+*.yml text eol=lf
+*.png binary
+*.ico binary

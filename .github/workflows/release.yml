@@ -1,0 +1,34 @@
+# Publishing a new CloveStrap version: push a tag like v2.1.1 and this builds CloveStrap.exe and makes the GitHub Release.
+# Everyone's CloveStrap checks the latest release and updates itself.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp the version from the tag
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          echo "Building CloveStrap $v"
+          sed -i "s/AssemblyVersion(\"[0-9.]*\")/AssemblyVersion(\"$v.0\")/; s/AssemblyFileVersion(\"[0-9.]*\")/AssemblyFileVersion(\"$v.0\")/" src/Core.cs
+          grep -n "AssemblyVersion\|AssemblyFileVersion" src/Core.cs
+
+      - name: Build
+        shell: bash
+        run: ./build.sh
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/CloveStrap.exe
+          generate_release_notes: true

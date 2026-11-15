@@ -1,0 +1,7 @@
+# build output and downloads in progress
+out/
+*.part
+*.piece*
+
+# helper tool binaries (built from tools/*.cs)
+tools/*.exe
