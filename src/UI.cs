@@ -3864,6 +3864,7 @@ namespace CloveStrap
             }
 
             // ---- screenshot of a page (testing): --render-page <page> <file.png> [--demo-accounts]
+            if (args.Contains("--tray-tidy")) { try { Log.Write("tray-tidy: closed " + RobloxTray.Tidy()); } catch (Exception ex) { Log.Write("tray-tidy FAILED " + ex); } return 0; }
             if (args.Contains("--quiet-test")) { try { QuietRobloxTest.Run(); } catch (Exception ex) { Log.Write("quiet-test FAILED " + ex); } return 0; }
             int cti = Array.IndexOf(args, "--color-test");
             if (cti >= 0 && cti + 1 < args.Length) { foreach (var f in args.Skip(cti + 1)) { using (var im = Image.FromFile(f)) { Color ac; bool lt; ThemeColors.FromPicture(im, ThemeColors.Others(null, null), out ac, out lt); Log.Write("color-test: " + Path.GetFileName(f) + " -> " + Theme.Hex(ac) + (lt ? " light" : " dark") + " (closest clash: " + (ThemeColors.TooCloseTo(ac, ThemeColors.Others(null, null)) ?? "none") + ")"); } } return 0; }

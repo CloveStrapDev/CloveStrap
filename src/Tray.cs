@@ -119,6 +119,7 @@ namespace CloveStrap
             new Thread(() => AntiAfk.Run(() => exiting)) { IsBackground = true, Name = "anti-afk" }.Start();
             new Thread(() => AltWindows.Run(() => exiting)) { IsBackground = true, Name = "alt-windows" }.Start();
             new Thread(() => QuietRoblox.Run(() => exiting)) { IsBackground = true, Name = "quiet-roblox" }.Start();
+            new Thread(() => RobloxTray.Run(() => exiting)) { IsBackground = true, Name = "roblox-tray" }.Start();
             new Thread(() => DiscordPresence.Run(() => exiting)) { IsBackground = true, Name = "discord" }.Start();
 
             // CloveStrap updates itself from GitHub Releases
