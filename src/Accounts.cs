@@ -597,7 +597,7 @@ namespace CloveStrap
 
         public static List<Mutex> Acquire(Action<string> detail = null)
         {
-            if (Deployment.RobloxRunning() && !Active())
+            if (RobloxTray.GamesRunning() && !Active())
             {
                 // a Roblox that was opened the normal way is holding the lock: take it over instead of letting it get closed
                 try

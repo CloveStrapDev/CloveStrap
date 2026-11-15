@@ -822,7 +822,7 @@ namespace CloveStrap
             if (ticks % 8 == 0)
             {
                 try { if (File.GetLastWriteTimeUtc(Paths.SettingsFile) != settingsTime) { LoadSettings(); crossKey = null; } } catch { }
-                if (Deployment.RobloxRunning()) lastRoblox = DateTime.UtcNow;
+                if (RobloxTray.GamesRunning()) lastRoblox = DateTime.UtcNow;
                 else if ((DateTime.UtcNow - lastRoblox).TotalSeconds > 60) { Quit(); return; }
                 if (!s.OverlayEnabled && !s.ScreenCrosshair) { Quit(); return; }
             }

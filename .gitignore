@@ -5,3 +5,7 @@ out/
 
 # helper tool binaries (built from tools/*.cs)
 tools/*.exe
+
+# video tools for making showcase videos (not part of CloveStrap)
+tools/ffmpeg/
+video/

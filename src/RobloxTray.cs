@@ -30,6 +30,41 @@ namespace CloveStrap
             }
         }
 
+        static readonly object KnownLock = new object();
+        static readonly HashSet<int> KnownTray = new HashSet<int>(), KnownGame = new HashSet<int>();
+
+        /// <summary>True when a real Roblox client (a game or an alt) is running. Roblox's own background tray helper
+        /// doesn't count: it never closes, so anything that waits for "Roblox closed" would otherwise wait forever.</summary>
+        public static bool GamesRunning()
+        {
+            var procs = Process.GetProcessesByName("RobloxPlayerBeta");
+            try
+            {
+                lock (KnownLock)
+                {
+                    var alive = new HashSet<int>(procs.Select(p => p.Id));
+                    KnownTray.IntersectWith(alive); KnownGame.IntersectWith(alive);
+                    foreach (var p in procs)
+                    {
+                        if (KnownGame.Contains(p.Id)) return true;
+                        if (KnownTray.Contains(p.Id)) continue;
+                        bool tray = false;
+                        try
+                        {
+                            using (var q = new ManagementObjectSearcher("SELECT CommandLine FROM Win32_Process WHERE ProcessId = " + p.Id))
+                                foreach (ManagementObject mo in q.Get())
+                                    tray = Convert.ToString(mo["CommandLine"] ?? "").IndexOf("--launch-to-tray", StringComparison.OrdinalIgnoreCase) >= 0;
+                        }
+                        catch { }   // can't tell: count it as a game, the safe side
+                        if (tray) KnownTray.Add(p.Id);
+                        else { KnownGame.Add(p.Id); return true; }
+                    }
+                    return false;
+                }
+            }
+            finally { foreach (var p in procs) p.Dispose(); }
+        }
+
         /// <summary>Keeps one Roblox tray helper and closes the extra copies. Returns how many were closed.</summary>
         public static int Tidy()
         {

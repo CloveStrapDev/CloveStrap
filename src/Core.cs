@@ -1231,6 +1231,40 @@ namespace CloveStrap
         public static void InstallSelf()
         {
             string me = Path.GetFullPath(Application.ExecutablePath);
+            try { InstallSelfCopy(me); } finally { StartMenuShortcut(); }
+        }
+
+        // A "CloveStrap" entry in the Start menu (and so in Windows search), pointing at the installed copy.
+        public static void StartMenuShortcut()
+        {
+            try
+            {
+                string exe = ExePath();
+                string lnk = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "CloveStrap.lnk");
+                var shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType == null) return;
+                object shell = Activator.CreateInstance(shellType);
+                try
+                {
+                    object sc = shellType.InvokeMember("CreateShortcut", System.Reflection.BindingFlags.InvokeMethod, null, shell, new object[] { lnk });
+                    var t = sc.GetType();
+                    string current = t.InvokeMember("TargetPath", System.Reflection.BindingFlags.GetProperty, null, sc, null) as string;
+                    if (File.Exists(lnk) && string.Equals(current, exe, StringComparison.OrdinalIgnoreCase)) return;   // already right
+                    t.InvokeMember("TargetPath", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { exe });
+                    t.InvokeMember("WorkingDirectory", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { Path.GetDirectoryName(exe) });
+                    t.InvokeMember("IconLocation", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { exe + ",0" });
+                    t.InvokeMember("Description", System.Reflection.BindingFlags.SetProperty, null, sc, new object[] { "The smooth Roblox launcher" });
+                    t.InvokeMember("Save", System.Reflection.BindingFlags.InvokeMethod, null, sc, null);
+                    System.Runtime.InteropServices.Marshal.FinalReleaseComObject(sc);
+                    Log.Write("Start menu shortcut -> " + exe);
+                }
+                finally { System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell); }
+            }
+            catch (Exception ex) { Log.Write("Start menu shortcut skipped: " + ex.Message); }
+        }
+
+        static void InstallSelfCopy(string me)
+        {
             if (string.Equals(me, Path.GetFullPath(Paths.InstalledExe), StringComparison.OrdinalIgnoreCase)) return;
             // tidy up copies that were moved aside while they were running
             try

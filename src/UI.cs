@@ -1543,7 +1543,7 @@ namespace CloveStrap
             {
                 var cB = new VButton(cancel);
                 cB.Location = new Point(okB.Left - 8 - cB.Width, y + 4);
-                cB.Click += (o, e) => { DialogResult = DialogResult.Cancel; Close(); };
+                cB.Click += (o, e) => { DialogResult = DialogResult.No; Close(); };   // Esc / closing stays Cancel
                 Controls.Add(cB);
             }
             Height = y + 60;
@@ -1564,6 +1564,12 @@ namespace CloveStrap
         public static bool Confirm(IWin32Window owner, string title, string msg, string yes, string no = "Cancel")
         {
             using (var d = new VDialog(title, msg, null, false, true, yes, no)) return Show(owner, d) == DialogResult.OK;
+        }
+
+        /// <summary>OK for the main button, No for the second one, Cancel when the dialog was closed with Esc.</summary>
+        public static DialogResult Choose(IWin32Window owner, string title, string msg, string yes, string no)
+        {
+            using (var d = new VDialog(title, msg, null, false, true, yes, no)) return Show(owner, d);
         }
 
         public static string Input(IWin32Window owner, string title, string msg, string text, bool readOnly, string ok)
@@ -2275,51 +2281,68 @@ namespace CloveStrap
             }) { IsBackground = true }.Start();
         }
 
-        void LaunchAccounts(List<Account> list)
+        bool launching;
+
+        // Slow work (the server list, the multi-instance fix) runs off the UI thread so the window never freezes.
+        async void LaunchAccounts(List<Account> list)
         {
+            if (launching) { Log.Write("Launch click ignored: a launch is already starting"); return; }
             if (list.Count == 0) { Flash("Add an account first", Theme.Warn); return; }
             string err;
             SaveJoin();
             var target = JoinTarget.Parse(S.JoinMode, S.JoinValue, out err);
-            if (target == null) { Flash(Cute.Wont("launch", err), Theme.Warn); joinBox.Box.Focus(); return; }
+            if (target == null) { Log.Write("Launch: bad join target: " + err); Flash(Cute.Wont("launch", err), Theme.Warn); joinBox.Box.Focus(); return; }
+            Log.Write("Launch clicked: " + string.Join(", ", list.Select(a => a.Username)) + ", " + target.Describe());
 
-            // server picker: choose one server for this whole launch, so every account ends up together
-            string how = S.ServerPick ?? "any";
-            if (target.Mode == "place" && how != "any")
+            launching = true;
+            try
             {
-                try
+                // server picker: choose one server for this whole launch, so every account ends up together
+                string how = S.ServerPick ?? "any";
+                if (target.Mode == "place" && how != "any")
                 {
-                    Cursor = Cursors.WaitCursor;
-                    target.JobId = RobloxGames.PickServer(target.PlaceId, how, list.Count);
-                    if (target.JobId == null) Flash("No server with room for " + list.Count + " found, joining any server", Theme.Warn);
+                    Flash("Finding a server...", Theme.Accent);
+                    try
+                    {
+                        long place = target.PlaceId; int seats = list.Count;
+                        target.JobId = await System.Threading.Tasks.Task.Run(() => RobloxGames.PickServer(place, how, seats));
+                        if (target.JobId == null) Flash("No server with room for " + list.Count + " found, joining any server", Theme.Warn);
+                    }
+                    catch (Exception ex) { Log.Write("Server picker: " + ex.Message); Flash(Cute.Wont("pick a server", Cute.Reason(ex)) + ", joining any server", Theme.Warn); }
                 }
-                catch (Exception ex) { Log.Write("Server picker: " + ex.Message); Flash(Cute.Wont("pick a server", Cute.Reason(ex)) + ", joining any server", Theme.Warn); }
-                finally { Cursor = Cursors.Default; }
-            }
 
-            // a Roblox opened without multi-instance holds the lock, so a new one would close it: offer to fix that first
-            if (Deployment.RobloxRunning() && !MultiInstance.Active())
-            {
-                if (!VDialog.Confirm(this, "O-oh, it appears Roblox is already open OwO",
-                        "It was opened without multi-instance, so starting another Roblox would close it >_<\n\n" +
-                        "Fix now lets them all run side by side. Your open game stays open.", "Fix now", "Ignore"))
-                    return;
-                int n;
-                try { Cursor = Cursors.WaitCursor; n = MultiInstance.FreeRunning(null); }
-                catch (Exception ex) { Log.Write("Fix now failed: " + ex); n = -1; }
-                finally { Cursor = Cursors.Default; }
-                if (n < 0) { Flash(Cute.Wont("fix that", "Roblox closed first"), Theme.Bad); return; }
-                Flash("Fixed! Your open Roblox will stay open " + Cute.Face(), Theme.Accent);
-            }
+                // a Roblox opened without multi-instance holds the lock, so a new one would close it: offer to fix that first
+                bool open = await System.Threading.Tasks.Task.Run(() => RobloxTray.GamesRunning() && !MultiInstance.Active());
+                if (open)
+                {
+                    var pick = VDialog.Choose(this, "O-oh, it appears Roblox is already open OwO",
+                            "It was opened without multi-instance, so starting another Roblox would close it >_<\n\n" +
+                            "Fix now lets them all run side by side. Your open game stays open.", "Fix now", "Launch anyway");
+                    Log.Write("Roblox already open: " + (pick == DialogResult.OK ? "fix now" : pick == DialogResult.No ? "launch anyway" : "cancelled"));
+                    if (pick == DialogResult.Cancel) return;
+                    if (pick == DialogResult.OK)
+                    {
+                        Flash("Fixing...", Theme.Accent);
+                        int n;
+                        try { n = await System.Threading.Tasks.Task.Run(() => MultiInstance.FreeRunning(null)); }
+                        catch (Exception ex) { Log.Write("Fix now failed: " + ex); n = -1; }
+                        if (n < 0) Flash(Cute.Wont("fix that", "launching anyway"), Theme.Warn);
+                        else Flash("Fixed! Your open Roblox will stay open " + Cute.Face(), Theme.Accent);
+                    }
+                }
 
-            if (saveTimer.Enabled) { saveTimer.Stop(); SaveNow(false); }
-            for (int i = 0; i < list.Count; i++)
-            {
-                string args = "--account " + list[i].UserId + " " + target.ToArgs() + (i > 0 ? " --delay " + (i * 6) : "");
-                try { Process.Start(new ProcessStartInfo(Application.ExecutablePath, args) { UseShellExecute = false }); }
-                catch (Exception ex) { Flash(Cute.Wont("launch", Cute.Reason(ex)), Theme.Bad); return; }
+                if (saveTimer.Enabled) { saveTimer.Stop(); SaveNow(false); }
+                for (int i = 0; i < list.Count; i++)
+                {
+                    string args = "--account " + list[i].UserId + " " + target.ToArgs() + (i > 0 ? " --delay " + (i * 6) : "");
+                    try { Process.Start(new ProcessStartInfo(Application.ExecutablePath, args) { UseShellExecute = false }); }
+                    catch (Exception ex) { Log.Write("Launch failed: " + ex.Message); Flash(Cute.Wont("launch", Cute.Reason(ex)), Theme.Bad); return; }
+                }
+                Log.Write("Launch started for " + list.Count + " account(s)");
+                Flash(list.Count == 1 ? "Launching " + list[0].Username + ", " + target.Describe() : "Launching " + list.Count + " accounts, " + target.Describe(), Theme.Accent);
             }
-            Flash(list.Count == 1 ? "Launching " + list[0].Username + ", " + target.Describe() : "Launching " + list.Count + " accounts, " + target.Describe(), Theme.Accent);
+            catch (Exception ex) { Log.Write("Launch: " + ex); Flash(Cute.Wont("launch", Cute.Reason(ex)), Theme.Bad); }
+            finally { launching = false; }
         }
 
         void BuildPerformance()
@@ -2459,7 +2482,7 @@ namespace CloveStrap
             {
                 if (loading || !tScreenCross.Checked) return;
                 SaveNow(false);
-                if (Deployment.RobloxRunning() && !OverlayLauncher.IsRunning()) { try { OverlayLauncher.Start(S); } catch { } }
+                if (RobloxTray.GamesRunning() && !OverlayLauncher.IsRunning()) { try { OverlayLauncher.Start(S); } catch { } }
                 Flash("Screen crosshair on. It sits on top of Roblox, over any game's crosshair", Theme.Accent);
             };
             cr.AddRow("Screen crosshair", "Draws your crosshair over any game's own.", tScreenCross);
@@ -2479,7 +2502,7 @@ namespace CloveStrap
             start.Click += (o, e) =>
             {
                 SaveNow(false);
-                if (!Deployment.RobloxRunning()) { Flash(Cute.Wont("show the overlay", "Roblox running"), Theme.Warn); return; }
+                if (!RobloxTray.GamesRunning()) { Flash(Cute.Wont("show the overlay", "Roblox running"), Theme.Warn); return; }
                 if (OverlayLauncher.IsRunning()) { Flash("The overlay is already running", Theme.Accent); return; }
                 try
                 {
@@ -3857,7 +3880,8 @@ namespace CloveStrap
                 if (result.KeepAlive)
                 {
                     try { result.Process.WaitForExit(); } catch { }
-                    while (Deployment.RobloxRunning()) Thread.Sleep(3000);
+                    while (RobloxTray.GamesRunning()) Thread.Sleep(3000);   // Roblox's tray helper never closes, so it doesn't count
+                    Log.Write("No Roblox games left, releasing the multi-instance lock");
                     foreach (var m in held) MultiInstance.Release(m);
                 }
                 return 0;
